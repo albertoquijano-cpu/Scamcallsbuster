@@ -1,29 +1,42 @@
 {
   "expo": {
-    "name": "ScamCallsBuster",
-    "slug": "ScamCallsBuster",
+    "name": "ScamCalls Buster",
+    "slug": "scamcallsbuster",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
+    "platforms": ["ios", "android"],
+    "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Necesario para filtrar llamadas de números desconocidos"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "infoPlist": {
+              "NSMicrophoneUsageDescription": "Para escuchar al emisor durante el filtro de llamadas"
+            }
+          }
+        }
+      ]
+    ],
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.albertoquijano.scamcallsbuster",
+      "infoPlist": {
+        "UIBackgroundModes": ["voip", "audio"]
+      }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+      "package": "com.albertoquijano.scamcallsbuster",
+      "permissions": [
+        "READ_PHONE_STATE",
+        "ANSWER_PHONE_CALLS",
+        "READ_CONTACTS"
+      ]
     }
   }
 }
