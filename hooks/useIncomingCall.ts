@@ -13,6 +13,7 @@ interface IncomingCallInfo {
   callUUID: string;
   phoneNumber: string;
   isFiltered: boolean;
+  isSuspicious: boolean;
 }
 
 export function useIncomingCall() {
@@ -24,10 +25,12 @@ export function useIncomingCall() {
 
     RNCallKeep.addEventListener('didReceiveStartCallAction', ({ callUUID, handle }) => {
       const isFiltered = getCallIsFiltered();
-      setCallInfo({ callUUID, phoneNumber: handle, isFiltered });
+      const isSuspicious = handle.includes('sospechoso');
+      setCallInfo({ callUUID, phoneNumber: handle, isFiltered, isSuspicious });
       setCallState(isFiltered ? 'filtered' : 'idle');
     });
 
+    // Emisor colgó — notificar al receptor sutilmente
     RNCallKeep.addEventListener('endCall', () => {
       setCallState('ended');
       setCallInfo(null);
@@ -45,11 +48,10 @@ export function useIncomingCall() {
     setCallState('accepted');
   }, []);
 
+  // Rechazar visualmente — conexión sigue activa en background
   const handleReject = useCallback(async () => {
     await rejectFilteredCall();
-    setCallState('ended');
-    setCallInfo(null);
-    setTimeout(() => setCallState('idle'), 2000);
+    setCallState('idle'); // Vuelve a pantalla principal silenciosamente
   }, []);
 
   return { callState, callInfo, handleAccept, handleReject };

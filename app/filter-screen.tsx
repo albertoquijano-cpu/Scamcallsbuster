@@ -8,16 +8,19 @@ import {
   SafeAreaView,
   Switch,
 } from 'react-native';
-import { useIncomingCall } from '../hooks/useIncomingCall';
+import { useIncomingCall, CallState } from '../hooks/useIncomingCall';
 import { setAppEnabled } from '../modules/callHandler';
 
 export default function FilterScreen() {
   const { callState, callInfo, handleAccept, handleReject } = useIncomingCall();
   const [appActive, setAppActive] = useState(true);
+  const [testState, setTestState] = useState<CallState>('idle');
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  const activeState = callState !== 'idle' ? callState : testState;
+
   useEffect(() => {
-    if (callState === 'filtered') {
+    if (activeState === 'filtered') {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, useNativeDriver: true }),
@@ -28,17 +31,31 @@ export default function FilterScreen() {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
     }
-  }, [callState]);
+  }, [activeState]);
 
   const toggleApp = (value: boolean) => {
     setAppActive(value);
     setAppEnabled(value);
   };
 
-  if (callState === 'idle') {
+  const simulateCall = () => setTestState('filtered');
+
+  const testAccept = async () => {
+    await handleAccept();
+    setTestState('accepted');
+    setTimeout(() => setTestState('idle'), 2000);
+  };
+
+  const testReject = async () => {
+    await handleReject();
+    setTestState('idle');
+  };
+
+  if (activeState === 'idle') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.idleContainer}>
+
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>
               {appActive ? 'Protección activa' : 'Protección desactivada'}
@@ -50,6 +67,7 @@ export default function FilterScreen() {
               thumbColor='#ffffff'
             />
           </View>
+
           <Text style={styles.idleIcon}>{appActive ? '🛡️' : '⚠️'}</Text>
           <Text style={styles.idleTitle}>
             {appActive ? 'ScamCalls Buster activo' : 'ScamCalls Buster inactivo'}
@@ -59,42 +77,71 @@ export default function FilterScreen() {
               ? 'Las llamadas de números desconocidos serán bloqueadas automáticamente'
               : 'Todas las llamadas entrarán normalmente sin filtro'}
           </Text>
+
+          {/* Botón de prueba — solo durante desarrollo */}
+          <TouchableOpacity style={styles.testButton} onPress={simulateCall}>
+            <Text style={styles.testButtonText}>🧪  Simular llamada filtrada</Text>
+          </TouchableOpacity>
+
         </View>
       </SafeAreaView>
     );
   }
 
-  if (callState === 'filtered') {
+  if (activeState === 'filtered') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.filteredContainer}>
+
           <Animated.View style={[styles.iconWrapper, { transform: [{ scale: pulseAnim }] }]}>
-            <Text style={styles.filterIcon}>🔇</Text>
+            <Text style={styles.filterIcon}>
+              {callInfo?.isSuspicious ? '⚠️' : '🔇'}
+            </Text>
           </Animated.View>
+
           <Text style={styles.filteredTitle}>Número desconocido</Text>
           <Text style={styles.phoneNumber}>
-            {callInfo?.phoneNumber ?? 'Número oculto'}
+            {callInfo?.phoneNumber ?? '+00 000 000 0000'}
           </Text>
+
+          {callInfo?.isSuspicious && (
+            <View style={styles.suspiciousBox}>
+              <Text style={styles.suspiciousText}>
+                ⚠️ Este número ha llamado repetidamente en horarios similares
+              </Text>
+            </View>
+          )}
+
           <View style={styles.alertBox}>
             <Text style={styles.alertTitle}>🚫 Bloqueo en acción</Text>
             <Text style={styles.alertText}>
               Quien llama no puede oír lo que digas, pero tú sí puedes oír lo que él diga para que decidas si tomas la llamada o no.
             </Text>
           </View>
+
           <View style={styles.buttonsContainer}>
-            <TouchableOpacity style={styles.rejectButton} onPress={handleReject} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.rejectButton}
+              onPress={testReject}
+              activeOpacity={0.8}
+            >
               <Text style={styles.rejectButtonText}>✕  Rechazar</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.acceptButton} onPress={handleAccept} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.acceptButton}
+              onPress={testAccept}
+              activeOpacity={0.8}
+            >
               <Text style={styles.acceptButtonText}>✓  Aceptar llamada</Text>
             </TouchableOpacity>
           </View>
+
         </View>
       </SafeAreaView>
     );
   }
 
-  if (callState === 'accepted') {
+  if (activeState === 'accepted') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.idleContainer}>
@@ -106,7 +153,7 @@ export default function FilterScreen() {
     );
   }
 
-  if (callState === 'ended') {
+  if (activeState === 'ended') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.idleContainer}>
@@ -136,11 +183,29 @@ const styles = StyleSheet.create({
   idleIcon: { fontSize: 64, marginBottom: 20 },
   idleTitle: { fontSize: 24, fontWeight: '600', color: '#ffffff', marginBottom: 12, textAlign: 'center' },
   idleSubtitle: { fontSize: 15, color: '#888888', textAlign: 'center', lineHeight: 22 },
+  testButton: {
+    marginTop: 40,
+    borderWidth: 1,
+    borderColor: '#444444',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  testButtonText: { color: '#888888', fontSize: 14 },
   filteredContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   iconWrapper: { marginBottom: 16 },
   filterIcon: { fontSize: 72 },
   filteredTitle: { fontSize: 26, fontWeight: '700', color: '#ffffff', marginBottom: 6 },
   phoneNumber: { fontSize: 20, fontWeight: '500', color: '#f0a500', marginBottom: 20 },
+  suspiciousBox: {
+    backgroundColor: '#2a1500',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#f0a500',
+  },
+  suspiciousText: { fontSize: 13, color: '#f0a500', textAlign: 'center' },
   alertBox: {
     backgroundColor: '#1a1a1a',
     borderRadius: 14,

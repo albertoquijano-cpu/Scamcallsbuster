@@ -2,10 +2,8 @@ import * as Contacts from 'expo-contacts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CACHE_KEY = 'scamcalls:whitelist';
-const BLOCKED_KEY = 'scamcalls:blocked';
 const ATTEMPTS_KEY = 'scamcalls:attempts';
 const CACHE_TTL = 1000 * 60 * 60;
-const MAX_ATTEMPTS = 3;
 
 interface WhitelistCache {
   numbers: string[];
@@ -13,17 +11,29 @@ interface WhitelistCache {
 }
 
 interface CallAttempt {
-  count: number;
-  lastCall: number;
+  timestamps: number[];
 }
 
 function normalizeNumber(phone: string): string {
   return phone.replace(/[\s\-\(\)\+]/g, '');
 }
 
-function isSuspiciousHour(): boolean {
-  const hour = new Date().getHours();
-  return hour < 7 || hour >= 21;
+// Detecta si un número llama repetidamente en horarios similares por varios días
+function isSuspiciousPattern(attempts: CallAttempt): boolean {
+  if (attempts.timestamps.length < 4) return false;
+
+  const now = Date.now();
+  const twoDaysAgo = now - 1000 * 60 * 60 * 48;
+  const recent = attempts.timestamps.filter(t => t > twoDaysAgo);
+
+  if (recent.length < 4) return false;
+
+  // Verificar si las llamadas ocurren en horarios similares (±60 minutos)
+  const hours = recent.map(t => new Date(t).getHours());
+  const baseHour = hours[0];
+  const similarHours = hours.filter(h => Math.abs(h - baseHour) <= 1);
+
+  return similarHours.length >= 3;
 }
 
 export async function loadWhitelist(): Promise<string[]> {
@@ -60,38 +70,20 @@ async function registerCallAttempt(number: string): Promise<boolean> {
   try {
     const raw = await AsyncStorage.getItem(ATTEMPTS_KEY);
     const attempts: Record<string, CallAttempt> = raw ? JSON.parse(raw) : {};
-    const current = attempts[number] || { count: 0, lastCall: Date.now() };
-    const hoursSince = (Date.now() - current.lastCall) / (1000 * 60 * 60);
-    if (hoursSince > 24) current.count = 0;
-    current.count += 1;
-    current.lastCall = Date.now();
+    const current = attempts[number] || { timestamps: [] };
+
+    // Mantener solo los últimos 7 días
+    const sevenDaysAgo = Date.now() - 1000 * 60 * 60 * 24 * 7;
+    current.timestamps = current.timestamps.filter(t => t > sevenDaysAgo);
+    current.timestamps.push(Date.now());
+
     attempts[number] = current;
     await AsyncStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
-    if (current.count >= MAX_ATTEMPTS) {
-      await blockNumber(number);
-      return true;
-    }
-    return false;
+
+    return isSuspiciousPattern(current);
   } catch (err) {
     return false;
   }
-}
-
-export async function blockNumber(number: string): Promise<void> {
-  const raw = await AsyncStorage.getItem(BLOCKED_KEY);
-  const blocked: string[] = raw ? JSON.parse(raw) : [];
-  const normalized = normalizeNumber(number);
-  if (!blocked.includes(normalized)) {
-    blocked.push(normalized);
-    await AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(blocked));
-  }
-}
-
-export async function isNumberBlocked(number: string): Promise<boolean> {
-  const raw = await AsyncStorage.getItem(BLOCKED_KEY);
-  const blocked: string[] = raw ? JSON.parse(raw) : [];
-  const last8 = normalizeNumber(number).slice(-8);
-  return blocked.some(n => n.endsWith(last8));
 }
 
 export async function isNumberWhitelisted(incomingNumber: string): Promise<{
@@ -99,30 +91,23 @@ export async function isNumberWhitelisted(incomingNumber: string): Promise<{
   reason: string;
 }> {
   const normalized = normalizeNumber(incomingNumber);
-  const blocked = await isNumberBlocked(normalized);
-  if (blocked) return { allowed: false, reason: 'blocked' };
+
+  // Verificar si está en contactos
   const whitelist = await loadWhitelist();
   const last8 = normalized.slice(-8);
   const isKnown = whitelist.some(n => n.endsWith(last8));
-  if (isKnown && isSuspiciousHour()) return { allowed: false, reason: 'suspicious_hour' };
+
   if (isKnown) return { allowed: true, reason: 'whitelisted' };
-  await registerCallAttempt(normalized);
-  return { allowed: false, reason: 'unknown' };
+
+  // Registrar intento y detectar patrón sospechoso
+  const suspicious = await registerCallAttempt(normalized);
+
+  return {
+    allowed: false,
+    reason: suspicious ? 'suspicious_pattern' : 'unknown',
+  };
 }
 
 export async function invalidateCache(): Promise<void> {
   await AsyncStorage.removeItem(CACHE_KEY);
-}
-
-export async function getBlockedNumbers(): Promise<string[]> {
-  const raw = await AsyncStorage.getItem(BLOCKED_KEY);
-  return raw ? JSON.parse(raw) : [];
-}
-
-export async function unblockNumber(number: string): Promise<void> {
-  const raw = await AsyncStorage.getItem(BLOCKED_KEY);
-  const blocked: string[] = raw ? JSON.parse(raw) : [];
-  const normalized = normalizeNumber(number);
-  const filtered = blocked.filter(n => !n.endsWith(normalized.slice(-8)));
-  await AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(filtered));
 }
