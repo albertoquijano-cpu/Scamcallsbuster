@@ -3,7 +3,7 @@ import RNCallKeep from 'react-native-callkeep';
 import {
   setupCallHandler,
   acceptFilteredCall,
-  rejectFilteredCall,
+  hangupFilteredCall,
   getCallIsFiltered,
 } from '../modules/callHandler';
 
@@ -48,11 +48,11 @@ export function useIncomingCall() {
     setCallState('accepted');
   }, []);
 
-  // Rechazar visualmente — conexión sigue activa en background
-  const handleReject = useCallback(async () => {
-    await rejectFilteredCall();
+  // Colgar visualmente — conexión sigue activa en background con tono de fax
+  const handleHangup = useCallback(async () => {
+    await hangupFilteredCall();
     setCallState('idle'); // Vuelve a pantalla principal silenciosamente
   }, []);
 
-  return { callState, callInfo, handleAccept, handleReject };
+  return { callState, callInfo, handleAccept, handleHangup };
 }

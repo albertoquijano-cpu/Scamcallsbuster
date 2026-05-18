@@ -8,17 +8,32 @@ import {
   SafeAreaView,
   Switch,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIncomingCall, CallState } from '../hooks/useIncomingCall';
-import { setAppEnabled } from '../modules/callHandler';
+import { setAppEnabled, setFaxDelay, getFaxDelay } from '../modules/callHandler';
 import BreastplateIcon from '../components/BreastplateIcon';
 
+const FAX_DELAY_KEY = '@scamcalls_fax_delay';
+
 export default function FilterScreen() {
-  const { callState, callInfo, handleAccept, handleReject } = useIncomingCall();
+  const { callState, callInfo, handleAccept, handleHangup } = useIncomingCall();
   const [appActive, setAppActive] = useState(true);
   const [testState, setTestState] = useState<CallState>('idle');
+  const [faxDelay, setFaxDelayState] = useState<0 | 4 | 8>(4);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const activeState = callState !== 'idle' ? callState : testState;
+
+  // Cargar delay guardado al iniciar
+  useEffect(() => {
+    AsyncStorage.getItem(FAX_DELAY_KEY).then(val => {
+      if (val !== null) {
+        const parsed = parseInt(val) as 0 | 4 | 8;
+        setFaxDelayState(parsed);
+        setFaxDelay(parsed);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (activeState === 'filtered') {
@@ -39,6 +54,12 @@ export default function FilterScreen() {
     setAppEnabled(value);
   };
 
+  const handleDelayChange = async (delay: 0 | 4 | 8) => {
+    setFaxDelayState(delay);
+    setFaxDelay(delay);
+    await AsyncStorage.setItem(FAX_DELAY_KEY, delay.toString());
+  };
+
   const simulateCall = () => setTestState('filtered');
 
   const testAccept = async () => {
@@ -47,8 +68,8 @@ export default function FilterScreen() {
     setTimeout(() => setTestState('idle'), 2000);
   };
 
-  const testReject = async () => {
-    await handleReject();
+  const testHangup = async () => {
+    await handleHangup();
     setTestState('idle');
   };
 
@@ -80,6 +101,24 @@ export default function FilterScreen() {
               ? 'Las llamadas de números desconocidos serán bloqueadas automáticamente'
               : 'Todas las llamadas entrarán normalmente sin filtro'}
           </Text>
+
+          {/* Selector de tiempo de espera antes de activar sonidos de fax */}
+          <View style={styles.delaySection}>
+            <Text style={styles.delayLabel}>Espera antes de activar sonido de fax</Text>
+            <View style={styles.delayPicker}>
+              {([0, 4, 8] as const).map((sec) => (
+                <TouchableOpacity
+                  key={sec}
+                  style={[styles.delayOption, faxDelay === sec && styles.delayOptionActive]}
+                  onPress={() => handleDelayChange(sec)}
+                >
+                  <Text style={[styles.delayOptionText, faxDelay === sec && styles.delayOptionTextActive]}>
+                    {sec === 0 ? 'Inmediato' : `${sec} seg`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           {/* Botón de prueba — solo durante desarrollo */}
           <TouchableOpacity style={styles.testButton} onPress={simulateCall}>
@@ -124,11 +163,11 @@ export default function FilterScreen() {
 
           <View style={styles.buttonsContainer}>
             <TouchableOpacity
-              style={styles.rejectButton}
-              onPress={testReject}
+              style={styles.hangupButton}
+              onPress={testHangup}
               activeOpacity={0.8}
             >
-              <Text style={styles.rejectButtonText}>✕  Rechazar</Text>
+              <Text style={styles.hangupButtonText}>✕  Colgar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.acceptButton}
@@ -186,8 +225,43 @@ const styles = StyleSheet.create({
   idleIcon: { marginBottom: 20 },
   idleTitle: { fontSize: 24, fontWeight: '600', color: '#ffffff', marginBottom: 12, textAlign: 'center' },
   idleSubtitle: { fontSize: 15, color: '#888888', textAlign: 'center', lineHeight: 22 },
+  delaySection: {
+    marginTop: 32,
+    width: '100%',
+    alignItems: 'center',
+  },
+  delayLabel: {
+    fontSize: 13,
+    color: '#888888',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  delayPicker: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  delayOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#333333',
+    backgroundColor: '#1a1a1a',
+  },
+  delayOptionActive: {
+    borderColor: '#00cc66',
+    backgroundColor: '#003a1a',
+  },
+  delayOptionText: {
+    color: '#888888',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  delayOptionTextActive: {
+    color: '#00cc66',
+  },
   testButton: {
-    marginTop: 40,
+    marginTop: 24,
     borderWidth: 1,
     borderColor: '#444444',
     borderRadius: 12,
@@ -220,8 +294,8 @@ const styles = StyleSheet.create({
   alertTitle: { fontSize: 16, fontWeight: '700', color: '#ff4444', marginBottom: 8, textAlign: 'center' },
   alertText: { fontSize: 14, color: '#cccccc', textAlign: 'center', lineHeight: 21 },
   buttonsContainer: { width: '100%', gap: 12 },
-  rejectButton: { backgroundColor: '#2a0000', borderWidth: 1, borderColor: '#ff4444', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  rejectButtonText: { color: '#ff4444', fontSize: 17, fontWeight: '600' },
+  hangupButton: { backgroundColor: '#2a0000', borderWidth: 1, borderColor: '#ff4444', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  hangupButtonText: { color: '#ff4444', fontSize: 17, fontWeight: '600' },
   acceptButton: { backgroundColor: '#003a1a', borderWidth: 1, borderColor: '#00cc66', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   acceptButtonText: { color: '#00cc66', fontSize: 17, fontWeight: '600' },
 });
