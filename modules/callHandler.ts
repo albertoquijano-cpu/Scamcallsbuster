@@ -64,16 +64,18 @@ function registerCallEvents() {
     await handleCallEnded(callUUID);
   });
 
-  // Audio activo — iniciar tono de fax por 10 segundos
+  // Audio activo — mutear micro 10s para que receptor escuche al emisor; luego activar tono de fax
   RNCallKeep.addEventListener('didActivateAudioSession', async () => {
-    if (callIsFiltered) {
-      await startFaxTones();
+    if (callIsFiltered && activeCallId) {
+      RNCallKeep.setMutedCall(activeCallId, true);
+      console.log('[CallHandler] Micrófono muteado — receptor puede escuchar al emisor por 10s');
 
-      // Detener tono automáticamente a los 10 segundos
       faxTimeout = setTimeout(async () => {
-        await stopFaxTones();
-        console.log('[CallHandler] 10 segundos cumplidos, tono de fax detenido');
-        console.log('[CallHandler] Receptor ahora puede escuchar al emisor');
+        if (activeCallId) {
+          RNCallKeep.setMutedCall(activeCallId, false);
+        }
+        await startFaxTones();
+        console.log('[CallHandler] 10 segundos cumplidos — tono de fax activado');
       }, 10000);
     }
   });
@@ -143,9 +145,10 @@ export async function acceptFilteredCall() {
     clearTimeout(faxTimeout);
     faxTimeout = null;
   }
+  RNCallKeep.setMutedCall(activeCallId, false);
   callIsFiltered = false;
   await stopFaxTones();
-  console.log('[CallHandler] Llamada aceptada, conectando normalmente');
+  console.log('[CallHandler] Llamada aceptada, micrófono restaurado y conectando normalmente');
 }
 
 // Receptor pulsa "Rechazar" — pantalla desaparece pero conexión sigue activa con tono
