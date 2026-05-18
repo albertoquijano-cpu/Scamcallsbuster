@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useIncomingCall, CallState } from '../hooks/useIncomingCall';
 import { setAppEnabled } from '../modules/callHandler';
+import BreastplateIcon from '../components/BreastplateIcon';
 
 export default function FilterScreen() {
   const { callState, callInfo, handleAccept, handleReject } = useIncomingCall();
@@ -68,7 +69,9 @@ export default function FilterScreen() {
             />
           </View>
 
-          <Text style={styles.idleIcon}>{appActive ? '🛡️' : '⚠️'}</Text>
+          <View style={styles.idleIcon}>
+            <BreastplateIcon size={90} active={appActive} />
+          </View>
           <Text style={styles.idleTitle}>
             {appActive ? 'ScamCalls Buster activo' : 'ScamCalls Buster inactivo'}
           </Text>
@@ -180,7 +183,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   switchLabel: { fontSize: 13, color: '#888888' },
-  idleIcon: { fontSize: 64, marginBottom: 20 },
+  idleIcon: { marginBottom: 20 },
   idleTitle: { fontSize: 24, fontWeight: '600', color: '#ffffff', marginBottom: 12, textAlign: 'center' },
   idleSubtitle: { fontSize: 15, color: '#888888', textAlign: 'center', lineHeight: 22 },
   testButton: {
