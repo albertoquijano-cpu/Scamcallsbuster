@@ -18,11 +18,10 @@ const FAX_DELAY_KEY = '@scamcalls_fax_delay';
 export default function FilterScreen() {
   const { callState, callInfo, handleAccept, handleHangup } = useIncomingCall();
   const [appActive, setAppActive] = useState(true);
-  const [testState, setTestState] = useState<CallState>('idle');
   const [faxDelay, setFaxDelayState] = useState<0 | 4 | 8>(4);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const activeState = callState !== 'idle' ? callState : testState;
+  const activeState = callState;
 
   // Cargar delay guardado al iniciar
   useEffect(() => {
@@ -60,17 +59,12 @@ export default function FilterScreen() {
     await AsyncStorage.setItem(FAX_DELAY_KEY, delay.toString());
   };
 
-  const simulateCall = () => setTestState('filtered');
-
   const testAccept = async () => {
     await handleAccept();
-    setTestState('accepted');
-    setTimeout(() => setTestState('idle'), 2000);
   };
 
   const testHangup = async () => {
     await handleHangup();
-    setTestState('idle');
   };
 
   if (activeState === 'idle') {
@@ -120,12 +114,7 @@ export default function FilterScreen() {
             </View>
           </View>
 
-          {/* Botón de prueba — solo durante desarrollo */}
-          <TouchableOpacity style={styles.testButton} onPress={simulateCall}>
-            <Text style={styles.testButtonText}>🧪  Simular llamada filtrada</Text>
-          </TouchableOpacity>
-
-        </View>
+</View>
       </SafeAreaView>
     );
   }
@@ -260,15 +249,6 @@ const styles = StyleSheet.create({
   delayOptionTextActive: {
     color: '#00cc66',
   },
-  testButton: {
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: '#444444',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  testButtonText: { color: '#888888', fontSize: 14 },
   filteredContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   iconWrapper: { marginBottom: 16 },
   filterIcon: { fontSize: 72 },
