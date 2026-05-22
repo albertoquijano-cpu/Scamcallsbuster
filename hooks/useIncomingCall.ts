@@ -3,15 +3,15 @@ import RNCallKeep from 'react-native-callkeep';
 import {
   setupCallHandler,
   acceptFilteredCall,
+  discardFilteredCall,
   getCallIsFiltered,
 } from '../modules/callHandler';
 
-export type CallState = 'idle' | 'incoming' | 'filtered' | 'accepted' | 'ended';
+export type CallState = 'idle' | 'incoming' | 'listening' | 'filtered' | 'accepted' | 'ended';
 
 interface IncomingCallInfo {
   callUUID: string;
   phoneNumber: string;
-  isFiltered: boolean;
   isSuspicious: boolean;
 }
 
@@ -24,7 +24,7 @@ export function useIncomingCall() {
 
     RNCallKeep.addEventListener('didReceiveStartCallAction', ({ callUUID, handle }) => {
       const isSuspicious = handle.includes('sospechoso');
-      setCallInfo({ callUUID, phoneNumber: handle, isFiltered: true, isSuspicious });
+      setCallInfo({ callUUID, phoneNumber: handle, isSuspicious });
       setCallState('incoming');
     });
 
@@ -40,10 +40,35 @@ export function useIncomingCall() {
     };
   }, []);
 
-  const handleAccept = useCallback(async () => {
+  // Usuario toma la llamada normalmente
+  const handleTakeCall = useCallback(async () => {
     await acceptFilteredCall();
     setCallState('accepted');
   }, []);
 
-  return { callState, callInfo, handleAccept };
+  // Usuario quiere escuchar antes de decidir
+  const handleListen = useCallback(() => {
+    setCallState('listening');
+  }, []);
+
+  // Usuario acepta después de escuchar
+  const handleAcceptAfterListen = useCallback(async () => {
+    await acceptFilteredCall();
+    setCallState('accepted');
+  }, []);
+
+  // Usuario descarta — empiezan los tonos
+  const handleDiscard = useCallback(async () => {
+    await discardFilteredCall();
+    setCallState('filtered');
+  }, []);
+
+  return {
+    callState,
+    callInfo,
+    handleTakeCall,
+    handleListen,
+    handleAcceptAfterListen,
+    handleDiscard,
+  };
 }
