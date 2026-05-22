@@ -4,8 +4,11 @@ import {
   setupCallHandler,
   acceptFilteredCall,
   discardFilteredCall,
+  startListening,
   getCallIsFiltered,
+  getActiveCallType,
 } from '../modules/callHandler';
+import { CallType } from '../modules/callTypeDetector';
 
 export type CallState = 'idle' | 'incoming' | 'listening' | 'filtered' | 'accepted' | 'ended';
 
@@ -13,6 +16,7 @@ interface IncomingCallInfo {
   callUUID: string;
   phoneNumber: string;
   isSuspicious: boolean;
+  callType: CallType;
 }
 
 export function useIncomingCall() {
@@ -24,7 +28,8 @@ export function useIncomingCall() {
 
     RNCallKeep.addEventListener('didReceiveStartCallAction', ({ callUUID, handle }) => {
       const isSuspicious = handle.includes('sospechoso');
-      setCallInfo({ callUUID, phoneNumber: handle, isSuspicious });
+      const callType = getActiveCallType();
+      setCallInfo({ callUUID, phoneNumber: handle, isSuspicious, callType });
       setCallState('incoming');
     });
 
@@ -46,8 +51,9 @@ export function useIncomingCall() {
     setCallState('accepted');
   }, []);
 
-  // Usuario quiere escuchar antes de decidir
-  const handleListen = useCallback(() => {
+  // Usuario elige escuchar y decidir
+  const handleListen = useCallback(async () => {
+    await startListening();
     setCallState('listening');
   }, []);
 
@@ -57,7 +63,7 @@ export function useIncomingCall() {
     setCallState('accepted');
   }, []);
 
-  // Usuario descarta — empiezan los tonos
+  // Usuario descarta — tonos inmediatos
   const handleDiscard = useCallback(async () => {
     await discardFilteredCall();
     setCallState('filtered');

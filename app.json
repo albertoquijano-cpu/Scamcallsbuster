@@ -5,10 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "platforms": [
-      "ios",
-      "android"
-    ],
+    "platforms": ["ios", "android"],
     "plugins": [
       [
         "expo-contacts",
@@ -29,14 +26,14 @@
     ],
     "ios": {
       "bundleIdentifier": "com.albertoquijano.scamcallsbuster",
-      "infoPlist": {
-        "UIBackgroundModes": [
-          "voip",
-          "audio",
-          "voip",
-          "audio"
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.albertoquijano.scamcallsbuster"
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "com.apple.developer.callkit.call-directory": true
+      },
+      "infoPlist": {
+        "UIBackgroundModes": ["voip", "audio"]
       }
     },
     "android": {
@@ -44,15 +41,8 @@
       "permissions": [
         "READ_PHONE_STATE",
         "ANSWER_PHONE_CALLS",
-        "READ_CONTACTS",
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS"
+        "READ_CONTACTS"
       ]
-    },
-    "extra": {
-      "eas": {
-        "projectId": "705336ea-3c58-459b-9b55-ced7d9e2890e"
-      }
     }
   }
 }

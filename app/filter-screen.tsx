@@ -1,264 +1,201 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Animated,
-  SafeAreaView,
-  Switch,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
+  SafeAreaView, Switch, TextInput, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { useIncomingCall, CallState } from '../hooks/useIncomingCall';
-import { setAppEnabled, setSilenceSeconds, listenAndDecide } from '../modules/callHandler';
+import { setAppEnabled, setSilenceSeconds, getSilenceSeconds } from '../modules/callHandler';
+import { getCallTypeLabel, getCallTypeColor } from '../modules/callTypeDetector';
 
 export default function FilterScreen() {
-  const {
-    callState,
-    callInfo,
-    handleTakeCall,
-    handleListen,
-    handleAcceptAfterListen,
-    handleDiscard,
-  } = useIncomingCall();
-
+  const { callState, callInfo, handleTakeCall, handleListen, handleAcceptAfterListen, handleDiscard } = useIncomingCall();
   const [appActive, setAppActive] = useState(true);
   const [testState, setTestState] = useState<CallState>('idle');
   const [silenceInput, setSilenceInput] = useState('7');
+  const [silenceCountdown, setSilenceCountdown] = useState(0);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ringAnim = useRef(new Animated.Value(1)).current;
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activeState = callState !== 'idle' ? callState : testState;
 
   useEffect(() => {
     if (activeState === 'incoming') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(ringAnim, { toValue: 1.12, duration: 600, useNativeDriver: true }),
-          Animated.timing(ringAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
+      Animated.loop(Animated.sequence([
+        Animated.timing(ringAnim, { toValue: 1.12, duration: 600, useNativeDriver: true }),
+        Animated.timing(ringAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])).start();
     } else {
       ringAnim.stopAnimation();
       ringAnim.setValue(1);
     }
-
     if (activeState === 'filtered') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-        ])
-      ).start();
+      Animated.loop(Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+      ])).start();
     } else {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
     }
+    // Iniciar countdown cuando entra en modo listening
+    if (activeState === 'listening') {
+      const seconds = getSilenceSeconds();
+      setSilenceCountdown(seconds);
+      countdownRef.current = setInterval(() => {
+        setSilenceCountdown(prev => {
+          if (prev <= 1) {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    }
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
   }, [activeState]);
 
-  const toggleApp = (value: boolean) => {
-    setAppActive(value);
-    setAppEnabled(value);
-  };
-
+  const toggleApp = (value: boolean) => { setAppActive(value); setAppEnabled(value); };
   const handleSilenceChange = (value: string) => {
     const clean = value.replace(/[^0-9]/g, '');
     setSilenceInput(clean);
     const num = parseInt(clean);
-    if (!isNaN(num) && num > 0 && num <= 60) {
-      setSilenceSeconds(num);
-    }
+    if (!isNaN(num) && num > 0 && num <= 60) setSilenceSeconds(num);
   };
 
-  // Simulaciones para pruebas
   const simulateIncoming = () => setTestState('incoming');
-  const simListen = () => setTestState('listening');
+  const simListen = async () => { await handleListen(); setTestState('listening'); };
   const simAccept = async () => { await handleTakeCall(); setTestState('accepted'); setTimeout(() => setTestState('idle'), 2000); };
   const simDiscard = async () => { await handleDiscard(); setTestState('filtered'); };
   const simAcceptAfter = async () => { await handleAcceptAfterListen(); setTestState('accepted'); setTimeout(() => setTestState('idle'), 2000); };
 
-  // PANTALLA IDLE
-  if (activeState === 'idle') {
-    return (
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <SafeAreaView style={styles.container}>
-          <View style={styles.idleContainer}>
+  const callTypeLabel = callInfo ? getCallTypeLabel(callInfo.callType) : '📞 Llamada';
+  const callTypeColor = callInfo ? getCallTypeColor(callInfo.callType) : '#888888';
 
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>
-                {appActive ? 'Protección activa' : 'Protección desactivada'}
-              </Text>
-              <Switch
-                value={appActive}
-                onValueChange={toggleApp}
-                trackColor={{ false: '#333333', true: '#00cc66' }}
-                thumbColor='#ffffff'
-              />
-            </View>
-
-            <Image source={require('../assets/icon.png')} style={styles.appIcon} resizeMode='cover' />
-            <Text style={styles.idleTitle}>
-              {appActive ? 'ScamCalls Buster activo' : 'ScamCalls Buster inactivo'}
-            </Text>
-            <Text style={styles.idleSubtitle}>
-              {appActive
-                ? 'Las llamadas de números desconocidos serán interceptadas automáticamente'
-                : 'Todas las llamadas entrarán normalmente sin filtro'}
-            </Text>
-
-            {appActive && (
-              <View style={styles.silenceBox}>
-                <Text style={styles.silenceLabel}>
-                  Segundos de escucha antes de activar bloqueo
-                </Text>
-                <View style={styles.silenceInputRow}>
-                  <TextInput
-                    style={styles.silenceInput}
-                    value={silenceInput}
-                    onChangeText={handleSilenceChange}
-                    keyboardType='number-pad'
-                    maxLength={2}
-                    selectTextOnFocus
-                  />
-                  <Text style={styles.silenceUnit}>seg</Text>
-                </View>
-                <Text style={styles.silenceHint}>Mínimo 1 seg — máximo 60 seg</Text>
+  // IDLE
+  if (activeState === 'idle') return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.idleContainer}>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>{appActive ? 'Protección activa' : 'Protección desactivada'}</Text>
+            <Switch value={appActive} onValueChange={toggleApp} trackColor={{ false: '#333333', true: '#00cc66' }} thumbColor='#ffffff' />
+          </View>
+          <Image source={require('../assets/icon.png')} style={styles.appIcon} resizeMode='cover' />
+          <Text style={styles.idleTitle}>{appActive ? 'ScamCalls Buster activo' : 'ScamCalls Buster inactivo'}</Text>
+          <Text style={styles.idleSubtitle}>{appActive ? 'Las llamadas de números desconocidos serán interceptadas automáticamente' : 'Todas las llamadas entrarán normalmente sin filtro'}</Text>
+          {appActive && (
+            <View style={styles.silenceBox}>
+              <Text style={styles.silenceLabel}>Segundos de escucha antes de activar bloqueo</Text>
+              <View style={styles.silenceInputRow}>
+                <TextInput style={styles.silenceInput} value={silenceInput} onChangeText={handleSilenceChange} keyboardType='number-pad' maxLength={2} selectTextOnFocus />
+                <Text style={styles.silenceUnit}>seg</Text>
               </View>
-            )}
+              <Text style={styles.silenceHint}>Mínimo 1 seg — máximo 60 seg</Text>
+            </View>
+          )}
+          <TouchableOpacity style={styles.testButton} onPress={simulateIncoming}>
+            <Text style={styles.testButtonText}>🧪  Simular llamada sospechosa</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
+  );
 
-            <TouchableOpacity style={styles.testButton} onPress={simulateIncoming}>
-              <Text style={styles.testButtonText}>🧪  Simular llamada sospechosa</Text>
-            </TouchableOpacity>
+  // INCOMING
+  if (activeState === 'incoming') return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.incomingContainer}>
+        <Animated.Image source={require('../assets/icon.png')} style={[styles.incomingIcon, { transform: [{ scale: ringAnim }] }]} resizeMode='cover' />
+        <View style={[styles.callTypeBadge, { borderColor: callTypeColor }]}>
+          <Text style={[styles.callTypeText, { color: callTypeColor }]}>{callTypeLabel}</Text>
+        </View>
+        <Text style={styles.incomingTitle}>Llamada sospechosa</Text>
+        <Text style={styles.incomingNumber}>{callInfo?.phoneNumber ?? '+00 000 000 0000'}</Text>
+        <Text style={styles.incomingSubtitle}>Este número no está en tus contactos</Text>
+        <View style={styles.incomingButtons}>
+          <TouchableOpacity style={styles.takeButton} onPress={simAccept} activeOpacity={0.8}>
+            <Text style={styles.takeButtonText}>📞  Tomar llamada</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.listenButton} onPress={simListen} activeOpacity={0.8}>
+            <Text style={styles.listenButtonText}>👂  Escuchar y decidir</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
 
+  // LISTENING
+  if (activeState === 'listening') return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.listeningContainer}>
+        <Text style={styles.listeningIcon}>👂</Text>
+        <Text style={styles.listeningTitle}>Escuchando...</Text>
+        <Text style={styles.listeningNumber}>{callInfo?.phoneNumber ?? '+00 000 000 0000'}</Text>
+        <View style={[styles.callTypeBadge, { borderColor: callTypeColor }]}>
+          <Text style={[styles.callTypeText, { color: callTypeColor }]}>{callTypeLabel}</Text>
+        </View>
+        <Text style={styles.listeningSubtitle}>Quien llama no puede oírte.{'\n'}Escucha y decide.</Text>
+        {silenceCountdown > 0 && (
+          <View style={styles.countdownBox}>
+            <Text style={styles.countdownNumber}>{silenceCountdown}</Text>
+            <Text style={styles.countdownLabel}>segundos restantes</Text>
           </View>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-    );
-  }
-
-  // PANTALLA INCOMING — primera alerta
-  if (activeState === 'incoming') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.incomingContainer}>
-
-          <Animated.Image
-            source={require('../assets/icon.png')}
-            style={[styles.incomingIcon, { transform: [{ scale: ringAnim }] }]}
-            resizeMode='cover'
-          />
-
-          <Text style={styles.incomingTitle}>Llamada sospechosa</Text>
-          <Text style={styles.incomingNumber}>
-            {callInfo?.phoneNumber ?? '+00 000 000 0000'}
-          </Text>
-          <Text style={styles.incomingSubtitle}>
-            Este número no está en tus contactos
-          </Text>
-
-          <View style={styles.incomingButtons}>
-            <TouchableOpacity style={styles.takeButton} onPress={simAccept} activeOpacity={0.8}>
-              <Text style={styles.takeButtonText}>📞  Tomar llamada</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.listenButton} onPress={simListen} activeOpacity={0.8}>
-              <Text style={styles.listenButtonText}>👂  Escuchar y decidir</Text>
-            </TouchableOpacity>
-          </View>
-
+        )}
+        <View style={styles.listeningButtons}>
+          <TouchableOpacity style={styles.acceptButton} onPress={simAcceptAfter} activeOpacity={0.8}>
+            <Text style={styles.acceptButtonText}>✓  Aceptar llamada</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.discardButton} onPress={simDiscard} activeOpacity={0.8}>
+            <Text style={styles.discardButtonText}>🔇  Descartar electrónicamente</Text>
+          </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    );
-  }
+      </View>
+    </SafeAreaView>
+  );
 
-  // PANTALLA LISTENING — silencio X seg, usuario escucha
-  if (activeState === 'listening') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.listeningContainer}>
-
-          <Text style={styles.listeningIcon}>👂</Text>
-          <Text style={styles.listeningTitle}>Escuchando...</Text>
-          <Text style={styles.listeningNumber}>
-            {callInfo?.phoneNumber ?? '+00 000 000 0000'}
-          </Text>
-          <Text style={styles.listeningSubtitle}>
-            Quien llama no puede oírte.{'\n'}Escucha y decide.
-          </Text>
-
-          <View style={styles.listeningButtons}>
-            <TouchableOpacity style={styles.acceptButton} onPress={simAcceptAfter} activeOpacity={0.8}>
-              <Text style={styles.acceptButtonText}>✓  Aceptar llamada</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.discardButton} onPress={simDiscard} activeOpacity={0.8}>
-              <Text style={styles.discardButtonText}>🔇  Descartar electrónicamente</Text>
-            </TouchableOpacity>
-          </View>
-
+  // FILTERED — tonos activos
+  if (activeState === 'filtered') return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.filteredContainer}>
+        <Animated.View style={[styles.iconWrapper, { transform: [{ scale: pulseAnim }] }]}>
+          <Text style={styles.filterIcon}>🔇</Text>
+        </Animated.View>
+        <Text style={styles.filteredTitle}>Bloqueo activo</Text>
+        <Text style={styles.phoneNumber}>{callInfo?.phoneNumber ?? '+00 000 000 0000'}</Text>
+        <View style={styles.alertBox}>
+          <Text style={styles.alertTitle}>🚫 Bloqueo en acción</Text>
+          <Text style={styles.alertText}>Quien llama no puede oír lo que digas, pero tú sí puedes oír lo que él diga para que decidas si tomas la llamada o no.</Text>
         </View>
-      </SafeAreaView>
-    );
-  }
+        <Text style={styles.tonesNote}>La conexión se cortará automáticamente en 20 segundos</Text>
+      </View>
+    </SafeAreaView>
+  );
 
-  // PANTALLA FILTERED — tonos activos
-  if (activeState === 'filtered') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.filteredContainer}>
+  // ACCEPTED
+  if (activeState === 'accepted') return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.idleContainer}>
+        <Text style={styles.resultIcon}>✅</Text>
+        <Text style={styles.idleTitle}>Llamada conectada</Text>
+        <Text style={styles.idleSubtitle}>Hablando normalmente</Text>
+      </View>
+    </SafeAreaView>
+  );
 
-          <Animated.View style={[styles.iconWrapper, { transform: [{ scale: pulseAnim }] }]}>
-            <Text style={styles.filterIcon}>🔇</Text>
-          </Animated.View>
-
-          <Text style={styles.filteredTitle}>Bloqueo activo</Text>
-          <Text style={styles.phoneNumber}>
-            {callInfo?.phoneNumber ?? '+00 000 000 0000'}
-          </Text>
-
-          <View style={styles.alertBox}>
-            <Text style={styles.alertTitle}>🚫 Bloqueo en acción</Text>
-            <Text style={styles.alertText}>
-              Quien llama no puede oír lo que digas, pero tú sí puedes oír lo que él diga para que decidas si tomas la llamada o no.
-            </Text>
-          </View>
-
-          <Text style={styles.tonesNote}>
-            La conexión se cortará automáticamente en 20 segundos
-          </Text>
-
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // PANTALLA ACCEPTED
-  if (activeState === 'accepted') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.idleContainer}>
-          <Text style={styles.resultIcon}>✅</Text>
-          <Text style={styles.idleTitle}>Llamada conectada</Text>
-          <Text style={styles.idleSubtitle}>Hablando normalmente</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // PANTALLA ENDED
-  if (activeState === 'ended') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.idleContainer}>
-          <Text style={styles.resultIcon}>📵</Text>
-          <Text style={styles.idleSubtitle}>El emisor desconectó la llamada</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // ENDED
+  if (activeState === 'ended') return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.idleContainer}>
+        <Text style={styles.resultIcon}>📵</Text>
+        <Text style={styles.idleSubtitle}>El emisor desconectó la llamada</Text>
+      </View>
+    </SafeAreaView>
+  );
 
   return null;
 }
@@ -280,11 +217,13 @@ const styles = StyleSheet.create({
   silenceHint: { fontSize: 11, color: '#555555', marginTop: 8 },
   testButton: { marginTop: 32, borderWidth: 1, borderColor: '#444444', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
   testButtonText: { color: '#888888', fontSize: 14 },
+  callTypeBadge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 12 },
+  callTypeText: { fontSize: 13, fontWeight: '600' },
   incomingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
-  incomingIcon: { width: 110, height: 110, borderRadius: 24, marginBottom: 24 },
+  incomingIcon: { width: 110, height: 110, borderRadius: 24, marginBottom: 16 },
   incomingTitle: { fontSize: 26, fontWeight: '700', color: '#ff4444', marginBottom: 8, textAlign: 'center' },
   incomingNumber: { fontSize: 20, fontWeight: '500', color: '#f0a500', marginBottom: 8 },
-  incomingSubtitle: { fontSize: 14, color: '#888888', marginBottom: 40, textAlign: 'center' },
+  incomingSubtitle: { fontSize: 14, color: '#888888', marginBottom: 32, textAlign: 'center' },
   incomingButtons: { width: '100%', gap: 14 },
   takeButton: { backgroundColor: '#003a1a', borderWidth: 1, borderColor: '#00cc66', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   takeButtonText: { color: '#00cc66', fontSize: 17, fontWeight: '600' },
@@ -293,8 +232,11 @@ const styles = StyleSheet.create({
   listeningContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   listeningIcon: { fontSize: 72, marginBottom: 16 },
   listeningTitle: { fontSize: 28, fontWeight: '700', color: '#ffffff', marginBottom: 8 },
-  listeningNumber: { fontSize: 18, fontWeight: '500', color: '#f0a500', marginBottom: 12 },
-  listeningSubtitle: { fontSize: 14, color: '#888888', textAlign: 'center', lineHeight: 22, marginBottom: 40 },
+  listeningNumber: { fontSize: 18, fontWeight: '500', color: '#f0a500', marginBottom: 8 },
+  listeningSubtitle: { fontSize: 14, color: '#888888', textAlign: 'center', lineHeight: 22, marginBottom: 20 },
+  countdownBox: { backgroundColor: '#1a1a1a', borderRadius: 14, padding: 16, alignItems: 'center', marginBottom: 24, borderWidth: 1, borderColor: '#333333', width: 120 },
+  countdownNumber: { fontSize: 42, fontWeight: '700', color: '#f0a500' },
+  countdownLabel: { fontSize: 11, color: '#888888', marginTop: 4 },
   listeningButtons: { width: '100%', gap: 14 },
   acceptButton: { backgroundColor: '#003a1a', borderWidth: 1, borderColor: '#00cc66', borderRadius: 14, paddingVertical: 16, alignItems: 'center', width: '100%' },
   acceptButtonText: { color: '#00cc66', fontSize: 17, fontWeight: '600' },

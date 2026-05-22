@@ -1,9 +1,12 @@
 import RNCallKeep from 'react-native-callkeep';
 import { isNumberWhitelisted } from './contactsWhitelist';
 import { startFaxTones, stopFaxTones } from './audioEngine';
+import { detectCallType, CallType } from './callTypeDetector';
+import { addSuspiciousNumber } from './callDirectory';
 
 let activeCallId: string | null = null;
 let callIsFiltered = false;
+let activeCallType: CallType = 'unknown';
 let appEnabled = true;
 let silenceTimeout: ReturnType<typeof setTimeout> | null = null;
 let tonesTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -23,6 +26,10 @@ export function setSilenceSeconds(seconds: number) {
 
 export function getSilenceSeconds() {
   return silenceSeconds;
+}
+
+export function getActiveCallType(): CallType {
+  return activeCallType;
 }
 
 export async function setupCallHandler() {
@@ -68,7 +75,14 @@ function registerCallEvents() {
   });
 
   RNCallKeep.addEventListener('didActivateAudioSession', async () => {
-    console.log('[CallHandler] Audio activo');
+    console.log('[CallHandler] Audio activo, callType:', activeCallType);
+    // VoIP — app contestó automáticamente, iniciar silencio
+    if (callIsFiltered && activeCallType === 'VoIP') {
+      silenceTimeout = setTimeout(async () => {
+        console.log('[CallHandler] VoIP: silencio terminado, iniciando tonos');
+        await startFaxAndDisconnect();
+      }, silenceSeconds * 1000);
+    }
   });
 
   RNCallKeep.addEventListener('didDeactivateAudioSession', async () => {
@@ -93,13 +107,28 @@ async function handleIncomingCall(callUUID: string, phoneNumber: string) {
     return;
   }
 
-  // Número desconocido — mostrar llamada, SCB toma control visual
+  // Detectar tipo de llamada
+  activeCallType = await detectCallType(phoneNumber);
   callIsFiltered = true;
+
   const displayName = reason === 'suspicious_pattern'
     ? '⚠️ Patrón sospechoso'
     : 'Número desconocido';
 
   RNCallKeep.displayIncomingCall(callUUID, phoneNumber, displayName, 'number', false);
+
+  // Agregar a Call Directory para identificación futura
+  await addSuspiciousNumber(phoneNumber);
+
+  // VoIP — app contesta automáticamente después de 1.5 seg
+  if (activeCallType === 'VoIP') {
+    setTimeout(() => {
+      if (activeCallId === callUUID) {
+        RNCallKeep.answerIncomingCall(callUUID);
+      }
+    }, 1500);
+  }
+  // GSM — usuario contesta manualmente, SCB muestra pantalla
 }
 
 async function handleCallEnded(callUUID: string) {
@@ -108,7 +137,22 @@ async function handleCallEnded(callUUID: string) {
     await stopFaxTones();
     activeCallId = null;
     callIsFiltered = false;
+    activeCallType = 'unknown';
   }
+}
+
+// Iniciar tonos y desconectar después de 20 segundos
+async function startFaxAndDisconnect() {
+  await startFaxTones();
+  tonesTimeout = setTimeout(async () => {
+    console.log('[CallHandler] 20 segundos de tonos cumplidos, cortando conexión');
+    await stopFaxTones();
+    if (activeCallId) {
+      RNCallKeep.endCall(activeCallId);
+      activeCallId = null;
+      callIsFiltered = false;
+    }
+  }, 20000);
 }
 
 // Usuario toma la llamada normalmente
@@ -120,30 +164,20 @@ export async function acceptFilteredCall() {
   console.log('[CallHandler] Llamada aceptada normalmente');
 }
 
-// Usuario elige "Escuchar y decidir" — app contesta, silencio X seg
-export async function listenAndDecide() {
+// Usuario eligió escuchar — GSM ya está conectado, solo iniciamos silencio
+export async function startListening() {
   if (!activeCallId) return;
-  RNCallKeep.answerIncomingCall(activeCallId);
-  console.log(`[CallHandler] Escuchando por ${silenceSeconds} segundos`);
+  console.log(`[CallHandler] GSM: escuchando por ${silenceSeconds} segundos`);
+  // El silencio es natural — el usuario ya contestó y SCB no emite nada
+  // El timer de silencio corre en la UI
 }
 
-// Usuario descarta — empiezan tonos inmediatamente, máximo 20 seg
+// Usuario descarta — empiezan tonos inmediatamente, 20 seg máximo
 export async function discardFilteredCall() {
   if (!activeCallId) return;
-
+  clearAllTimeouts();
   console.log('[CallHandler] Descartando — iniciando tonos');
-  await startFaxTones();
-
-  // Después de 20 segundos de tonos, SCB corta la conexión
-  tonesTimeout = setTimeout(async () => {
-    console.log('[CallHandler] 20 segundos de tonos cumplidos, cortando conexión');
-    await stopFaxTones();
-    if (activeCallId) {
-      RNCallKeep.endCall(activeCallId);
-      activeCallId = null;
-      callIsFiltered = false;
-    }
-  }, 20000);
+  await startFaxAndDisconnect();
 }
 
 function clearAllTimeouts() {
